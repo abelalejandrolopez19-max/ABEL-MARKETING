@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
@@ -175,8 +176,27 @@ async function startServer() {
     // Serve static files in production
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
+    
+    let cachedHtml: string | null = null;
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      try {
+        if (!cachedHtml) {
+          cachedHtml = fs.readFileSync(path.join(distPath, "index.html"), "utf-8");
+        }
+        // Determine the canonical base URL of the application
+        const envUrl = process.env.APP_URL;
+        const host = envUrl && envUrl !== "MY_APP_URL"
+          ? envUrl.replace(/\/$/, "")
+          : `${req.protocol}://${req.get("host")}`;
+
+        // Inject resolved host into %APP_URL% placeholders
+        const outputHtml = cachedHtml.replace(/%APP_URL%/g, host);
+        res.setHeader("Content-Type", "text/html");
+        res.send(outputHtml);
+      } catch (err) {
+        console.error("Error serving index.html on wildcard route:", err);
+        res.status(500).send("Internal Server Error");
+      }
     });
   }
 
